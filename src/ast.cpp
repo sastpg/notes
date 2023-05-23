@@ -15,22 +15,10 @@ llvm::Value* ast::ProgramAST::codegen() {
 llvm::Value* ast::FuncDeclAST::codegen() {
     // Check parameters types
     std::vector<llvm::Type*> paraTypes;
-    for(auto &parameter : *arg_list) {
-        llvm::Type* _llvmType = parameter->para_type->getLlvmType();
-        if(!_llvmType) {
-            throw std::logic_error("Unknown type" + func_name);
-            return nullptr;
-        }
-        if(_llvmType->isVoidTy() && (*arg_list).size() != 1) {
-            throw std::logic_error("Invalid void in function " + func_name);
-            return nullptr;
-        }
-        else if(_llvmType->isVoidTy())
-            break;
-        if(_llvmType->isArrayTy())
-            _llvmType = _llvmType->getArrayElementType()->getPointerTo();
-        
-        paraTypes.push_back(_llvmType);
+    try {
+        checkParams(paraTypes);
+    } catch(std::logic_error e) {
+        throw e;
     }
 
     // Check return type
@@ -44,7 +32,8 @@ llvm::Value* ast::FuncDeclAST::codegen() {
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paraTypes, arg_list->with_dot);
     llvm::Function* func = llvm::Function::Create(funcType, llvm::GlobalValue::ExternalLinkage, func_name, gen.module);
 
-
+    // Check dupilicate
+    checkDuplicate(func);
     if(func->getName() != func_name) {
         func->eraseFromParent();
         func = gen.module->getFunction(func_name);
@@ -58,11 +47,12 @@ llvm::Value* ast::FuncDeclAST::codegen() {
         }
     }
 
+    // 
     if(fun_body) {
         llvm::BasicBlock* newBlock = llvm::BasicBlock::Create(context, "entry", func);
         builder.SetInsertPoint(newBlock);
         pushSymbolTab();
-
+        
         fun_body->codegen();
 
         popSymbolTab();
@@ -71,7 +61,7 @@ llvm::Value* ast::FuncDeclAST::codegen() {
 
 
 //BuiltInTypeAST
-llvm::Type* ast::BuiltInTypeAST::getLlvmType() {
+llvm::Type* ast::BuiltInTypeAST::getLlvmTy() {
     if(!llvmType)
     {
         switch (builtin_type)
