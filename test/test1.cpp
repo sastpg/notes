@@ -1,6 +1,14 @@
-void print(int a, double b);
+#include <iostream>
+using namespace std;
+
+void print(int a) {
+    cout << a << " int" << endl;
+}
+void print(double b) {
+    cout << b << endl;
+}
+
 int main() {
-    int a = 2;
-    double b = 9.0;
-    print(a, b);
+    double a = 1.1;
+    print(a);
 }

@@ -7,6 +7,15 @@
 #include <iostream>
 #include <string>
 #include <vector>
+// llvm
+#include <llvm/IR/Value.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/Verifier.h>
 
 namespace ast {
     /*************************************************************/
@@ -17,6 +26,7 @@ namespace ast {
         2. 最终推导出来的产生式有唯一的terminal和唯一的的non-terminal **/
     /** 如果有多个terminal或non-terminal，那么用一个 class 表示 **/
 
+	#pragma region ClassDecl
     /** Base **/
     class BaseAST;
     class ProgramAST;
@@ -100,7 +110,7 @@ namespace ast {
     class VariableAST;
     class ConstantAST;
     class GlobalStringAST;
-
+	#pragma endregion ClassDecl
 
     /*************************************************************/
     /**********      Class definitions of AST nodes      *********/
@@ -113,6 +123,8 @@ namespace ast {
         virtual ~BaseAST() = default;
         /** Convert node expression to json for visualization **/
         virtual std::string to_json() const = 0;
+		/** Generate IR Code **/
+		virtual llvm::Value* codegen() = 0;
     };
     
     // ProgramAST
@@ -121,6 +133,7 @@ namespace ast {
         DeclsAST* decls;
         ProgramAST(DeclsAST* decls) : decls(decls) {}
         std::string to_json() const;
+		llvm::Value* codegen();
         ~ProgramAST() {}
     };
 
@@ -129,6 +142,7 @@ namespace ast {
     public:
         StmtAST() {}
         virtual std::string to_json() const = 0;
+		virtual llvm::Value* codegen() = 0;
         ~StmtAST() {}
     };
 
@@ -136,9 +150,9 @@ namespace ast {
     class ExprAST : public StmtAST {
 	public:
 		ExprAST() {}
-		// virtual llvm::Value* CodeGen(CodeGenerator& __Generator) = 0;
 		// virtual llvm::Value* CodeGenPtr(CodeGenerator& __Generator) = 0;
 		virtual std::string to_json() const = 0;
+		virtual llvm::Value* codegen() = 0;
         ~ExprAST() {}
 	};
 
@@ -147,6 +161,7 @@ namespace ast {
     public:
         DeclAST() {}
         virtual std::string to_json() const = 0;
+		virtual llvm::Value* codegen() = 0;
         ~DeclAST() {}
     };
 
@@ -154,9 +169,10 @@ namespace ast {
     class VarTypeAST : public BaseAST {
     public:
         bool is_const;
+		llvm::Type *llvmType;
 
         VarTypeAST() : is_const(false) {}
-        VarTypeAST(bool is_const) : is_const(is_const) {}
+        VarTypeAST(bool is_const) : is_const(is_const), llvmType(nullptr) {}
         virtual std::string to_json() const = 0;
         void set_const();
         /**
@@ -167,6 +183,8 @@ namespace ast {
          * 5. Struct type
         */
         virtual int get_type() const = 0;
+		virtual llvm::Type* getLlvmType() = 0;
+		llvm::Value* codegen() { return nullptr; }
         ~VarTypeAST() {}
     };
 
@@ -181,6 +199,8 @@ namespace ast {
         FuncDeclAST(VarTypeAST *return_type, std::string& func_name, ArgListAST *arg_list, FuncBodyAST *fun_body = nullptr) :
             return_type(return_type), func_name(func_name), arg_list(arg_list), fun_body(fun_body){}
         std::string to_json() const;
+		/** Semantic **/
+		llvm::Value* codegen();
         ~FuncDeclAST() {}
     };
 
@@ -251,6 +271,7 @@ namespace ast {
         BuiltInTypeAST(BuiltinType builtin_type) : builtin_type(builtin_type) {}
         std::string to_json() const;
         int get_type() const { return 1; }
+		llvm::Type* getLlvmType();
         ~BuiltInTypeAST() {}
     };
 
@@ -416,7 +437,7 @@ namespace ast {
 		ExprAST* _Ary;
         ExprAST* _Idx;
 		SubscriptAST(ExprAST* __Ary, ExprAST* __Idx) : _Ary(__Ary), _Idx(__Idx) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
         ~SubscriptAST(void) {}
@@ -437,7 +458,7 @@ namespace ast {
 		SizeOfAST(const std::string& __Arg3) {
 			_Arg3 = __Arg3;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
         ~SizeOfAST(void) {}
@@ -452,7 +473,7 @@ namespace ast {
 			_Func = __Func;
 			_ArgL = __ArgL;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~FunctionCallAST(void) {}
 		std::string to_json() const;
@@ -466,7 +487,7 @@ namespace ast {
 			_Struct = __Struct;
 			_Mem = __Mem;
 		}	
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~StructReferenceAST(void) {}
 		std::string to_json() const;
@@ -480,7 +501,7 @@ namespace ast {
 			_StructPtr = __StructPtr;
 			_Mem = __Mem;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~StructDereferenceAST(void) {}
 		std::string to_json() const;
@@ -493,7 +514,7 @@ namespace ast {
 			_Op = __Op;
 		}
 		~UnaryPlusAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -504,7 +525,7 @@ namespace ast {
 		UnaryMinusAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 		~UnaryMinusAST(void) {}
@@ -518,7 +539,7 @@ namespace ast {
 			_VarType = __VarType;
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 		~TypeCastAST(void) {}
@@ -530,7 +551,7 @@ namespace ast {
 		PrefixIncAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~PrefixIncAST(void) {}
 		std::string to_json() const;
@@ -542,7 +563,7 @@ namespace ast {
 		PostfixIncAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~PostfixIncAST(void) {}
 		std::string to_json() const;
@@ -554,7 +575,7 @@ namespace ast {
 		PrefixDecAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~PrefixDecAST(void) {}
 		std::string to_json() const;
@@ -566,7 +587,7 @@ namespace ast {
 		PostfixDecAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~PostfixDecAST(void) {}
 		std::string to_json() const;
@@ -578,7 +599,7 @@ namespace ast {
 		IndirectionAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~IndirectionAST(void) {}
 		std::string to_json() const;
@@ -590,7 +611,7 @@ namespace ast {
 		AddressOfAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~AddressOfAST(void) {}
 		std::string to_json() const;
@@ -602,7 +623,7 @@ namespace ast {
 		LogicNotAST(ExprAST* __Op) {
 			_Op = __Op;
 		}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicNotAST(void) {}
 		std::string to_json() const;
@@ -613,7 +634,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		DivAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~DivAST(void) {}
 		std::string to_json() const;
@@ -624,7 +645,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		MulAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~MulAST(void) {}
 		std::string to_json() const;
@@ -635,7 +656,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		ModuloAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~ModuloAST(void) {}
 		std::string to_json() const;
@@ -646,7 +667,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		AddAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~AddAST(void) {}
 		std::string to_json() const;
@@ -657,7 +678,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		SubAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~SubAST(void) {}
 		std::string to_json() const;
@@ -668,7 +689,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LeftShiftAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LeftShiftAST(void) {}
 		std::string to_json() const;
@@ -679,7 +700,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		RightShiftAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~RightShiftAST(void) {}
 		std::string to_json() const;
@@ -690,7 +711,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicGTAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicGTAST(void) {}
 		std::string to_json() const;
@@ -701,7 +722,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicGEAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicGEAST(void) {}
 		std::string to_json() const;
@@ -712,7 +733,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicLTAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicLTAST(void) {}
 		std::string to_json() const;
@@ -723,7 +744,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicLEAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicLEAST(void) {}
 		std::string to_json() const;
@@ -734,7 +755,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicEQAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicEQAST(void) {}
 		std::string to_json() const;
@@ -745,7 +766,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicNEQAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicNEQAST(void) {}
 		std::string to_json() const;
@@ -757,7 +778,7 @@ namespace ast {
 		ExprAST* _RHS;
 		LogicANDAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~LogicANDAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -767,7 +788,7 @@ namespace ast {
 		ExprAST* _LHS;
 		ExprAST* _RHS;
 		LogicORAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		~LogicORAST(void) {}
 		std::string to_json() const;
@@ -779,7 +800,7 @@ namespace ast {
 		ExprAST* _RHS;
 		DirectAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~DirectAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -790,7 +811,7 @@ namespace ast {
 		ExprAST* _RHS;
 		DivAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~DivAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -801,7 +822,7 @@ namespace ast {
 		ExprAST* _RHS;
 		MulAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~MulAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -812,7 +833,7 @@ namespace ast {
 		ExprAST* _RHS;
 		ModAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~ModAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -823,7 +844,7 @@ namespace ast {
 		ExprAST* _RHS;
 		AddAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~AddAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -834,7 +855,7 @@ namespace ast {
 		ExprAST* _RHS;
 		SubAssignAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~SubAssignAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -845,7 +866,7 @@ namespace ast {
 		ExprAST* _RHS;
 		CommaExprAST(ExprAST* __LHS, ExprAST* __RHS) : _LHS(__LHS), _RHS(__RHS) {}
 		~CommaExprAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -857,7 +878,7 @@ namespace ast {
 			_Name = __Name;
 		}
 		~VariableAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -886,7 +907,7 @@ namespace ast {
 			_Real = __Real;
 		}
 		~ConstantAST() {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
@@ -898,7 +919,7 @@ namespace ast {
 			_Content = __Content;
 		}
 		~GlobalStringAST(void) {}
-		// llvm::Value* CodeGen(CodeGenerator& __Generator);
+		// llvm::Value* codegen(CodeGenerator& __Generator);
 		// llvm::Value* CodeGenPtr(CodeGenerator& __Generator);
 		std::string to_json() const;
 	};
