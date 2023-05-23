@@ -199,7 +199,9 @@ namespace ast {
         FuncDeclAST(VarTypeAST *return_type, std::string& func_name, ArgListAST *arg_list, FuncBodyAST *fun_body = nullptr) :
             return_type(return_type), func_name(func_name), arg_list(arg_list), fun_body(fun_body){}
         std::string to_json() const;
-		/** Semantic **/
+		/** Semantic functions **/
+		void checkParams(std::vector<llvm::Type*> &paraTypes);
+		bool checkDuplicate(llvm::Function* func);
 		llvm::Value* codegen();
         ~FuncDeclAST() {}
     };
@@ -271,7 +273,7 @@ namespace ast {
         BuiltInTypeAST(BuiltinType builtin_type) : builtin_type(builtin_type) {}
         std::string to_json() const;
         int get_type() const { return 1; }
-		llvm::Type* getLlvmType();
+		llvm::Type* getLlvmTy();
         ~BuiltInTypeAST() {}
     };
 
