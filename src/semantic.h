@@ -63,8 +63,10 @@ public:
     }
 };
 
+/** Global variables **/
 typedef std::map<std::string, Symbol> SymbolTable;
 std::vector<SymbolTable*> SymbolTables;
+llvm::DataLayout* DL;
 
 
 /** Semantic functions **/
@@ -90,3 +92,5 @@ bool AddStructType(llvm::StructType* Ty1, ast::StructTypeAST* Ty2);
 // Deal with Symbol table
 void pushSymbolTab();
 void popSymbolTab();
+
+llvm::AllocaInst* CreateEntryBlockAlloca(llvm::Function* func, std::string varName, llvm::Type* varType);
